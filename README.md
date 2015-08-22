@@ -1,6 +1,6 @@
 ## About
 
-This repo contains [Ansible](https://github.com/ansible/ansible) modules which use SSH to change configuration on Avaya devices. It is currently in the proof of concept stage and is intended to demonstrate how devices without modern APIs can be automated and integrated into a DevOps/NetOps model.
+This repo contains [Ansible](https://github.com/ansible/ansible) modules which utilize the SSH protocol to change configuration on Avaya devices. It is currently in the proof of concept stage and is intended to demonstrate how devices without modern APIs can be automated and integrated into a DevOps/NetOps model.
 
 ## Goal
 
@@ -50,81 +50,34 @@ $ ansible-playbook -i hosts example-playbooks/how-to/examples-save-config.yml
 
 PLAY [all] ********************************************************************
 
-TASK: [Ensure VLAN 10 is present and has the name INTERNAL] *******************
+TASK: [save config] ***********************************************************
 changed: [10.177.213.76]
 
-TASK: [Ensure VLAN 12 is present and has the name GUESTS] *********************
+TASK: [save config] ***********************************************************
 changed: [10.177.213.77]
 
-TASK: [Ensure that VLAN 40 is created] ****************************************
+TASK: [save config] ***********************************************************
 changed: [10.177.213.78]
 
-TASK: [Remove VLAN 80 if it is present] ***************************************
+TASK: [save config] ***********************************************************
 changed: [10.177.213.79]
 
-TASK: [Create vlan 100 with SNMPv3] *******************************************
-ok: [172.29.50.5]
-
-TASK: [Create vlan from variable] *********************************************
-changed: [172.29.50.5] => (item={'vlan_id': 30, 'vlan_name': 'red'})
-ok: [172.29.50.5] => (item={'vlan_id': 31, 'vlan_name': 'green'})
-changed: [172.29.50.5] => (item={'vlan_id': 32, 'vlan_name': 'blue'})
-
-NOTIFIED: [save config] *******************************************************
-changed: [172.29.50.5]
-
 PLAY RECAP ********************************************************************
-172.29.50.5                : ok=7    changed=3    unreachable=0    failed=0
-```
-
-Running the playbook a second time:
-
-```
-$ ansible-playbook -i hosts example-playbooks/how-to/examples-vlan.yml
-
-PLAY [all] ********************************************************************
-
-TASK: [Ensure VLAN 10 is present and has the name INTERNAL] *******************
-ok: [172.29.50.5]
-
-TASK: [Ensure VLAN 12 is present and has the name GUESTS] *********************
-ok: [172.29.50.5]
-
-TASK: [Ensure that VLAN 40 is created] ****************************************
-ok: [172.29.50.5]
-
-TASK: [Remove VLAN 80 if it is present] ***************************************
-ok: [172.29.50.5]
-
-TASK: [Create vlan 100 with SNMPv3] *******************************************
-ok: [172.29.50.5]
-
-TASK: [Create vlan from variable] *********************************************
-ok: [172.29.50.5] => (item={'vlan_id': 30, 'vlan_name': 'red'})
-ok: [172.29.50.5] => (item={'vlan_id': 31, 'vlan_name': 'green'})
-ok: [172.29.50.5] => (item={'vlan_id': 32, 'vlan_name': 'blue'})
-
-PLAY RECAP ********************************************************************
-172.29.50.5                : ok=6    changed=0    unreachable=0    failed=0
+10.177.213.10              : ok=0    changed=4    unreachable=0    failed=0
 ```
 
 ## Todo
 
-* Error handling (the module assumes that the SNMPv3 user/SNMPv2 community has write access to the device)
-* Ability to save running configuration to startup configuration
-* cisco_snmp_switchport module - Add ability to set allowed VLANs on a trunk
-
 ## Known issues
 
-* Naming conflicts: If you try to add a vlan using a name which already exists the module won't pick this up. The vlan will keep it's old name or be created without a name
-* No checking if the provided vlan_id is a valid number. I.e. the module won't complain if you try to create a vlan with id 37812942
+## Prioritized roadmap
 
-## Potential roadmap
-
-* Change interfaces i.e. access/trunk port, vlan assignments, description, admin up/down
-* Handle configuraion backups
-* All other things which might be possible through SNMP
+1. Confirm/Add software image, enable specific software image, and reboot to update OS.
+2. Backup configuration to file server
+3. Modify VLANs
+4. Modify ISID to VLAN mapping
+5. Interface configuration
 
 ## Feedback
 
-If you have any questions or feedback. Please send me a note over [at my blog](http://networklore.com/contact/) or submit an issue here at Github.
+Feel free to reach out to me at mileswdavis@gmail.com or submit an issue on GitHub.
