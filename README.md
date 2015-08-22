@@ -1,47 +1,43 @@
 ## About
 
-This repo contains [Ansible](https://github.com/ansible/ansible) modules which use SNMP to change configuration on Cisco devices. The repo is currently in a proof of concept stage to see how you can manage older devices (which doesn't have a fancy api) with modern IT automation tools. Over at Networklore there's more information about the [Ansible for Cisco IOS SNMP modules](http://networklore.com/ansible-cisco-snmp/).
+This repo contains [Ansible](https://github.com/ansible/ansible) modules which use SSH to change configuration on Avaya devices. It is currently in the proof of concept stage and is intended to demonstrate how devices without modern APIs can be automated and integrated into a DevOps/NetOps model.
 
 ## Goal
 
-The goal of this project is to provide idempotent modules for older Cisco devices.
+The goal of this project is to provide an automation tool set for Avaya products using Ansible as a framework.
 
 ## Alpha code
 
-Currently this is only a test and there's a good chance that a lot of the code will change.
+This code is still very fresh and will likely go through many iterations.
 
 ## Dependencies
 
 These modules requires:
 
-* [pysnmp](http://pysnmp.sourceforge.net) 4.2.5 or later
-* [nelsnmp](https://github.com/networklore/nelsnmp)
-* A good old Cisco switch/router
+* [netmiko](https://github.com/ktbyers/netmiko)
+* Avaya VSP devices
 
 ## Installation of Ansible module
 ```
-pip install nelsnmp
+pip install netmiko
 ```
-As new modules are added you will need to update nelsnmp to support newer MIBs.
-```
-pip install nelsnmp --upgrade
-```
-If you are running Ansible through a Python virtualenv you might need to change the ansible_python_interpreter variable. Check the hosts file in this repo for an example. You can clone this repo and copy the modules to your Ansible library path. If you are unsure, check out the [quick start guide](http://networklore.com/ansible-cisco-snmp-install/)
+If you are running Ansible through a Python virtualenv you might need to change the ansible_python_interpreter variable. Check the hosts file in this repo for an example. You can clone this repo and copy the modules to your Ansible library path.
 
-## Configuration of Cisco device
+## Configuration of Avaya VSP device
 
-Testing: SNMPv2
+Testing: SSH via Local Auth
 ```
-snmp-server community [write-community-string] rw [acl]
+boot config flags sshd
+ssh
+username admin leve rwa
+Enter the old password : ******** 
+Enter the New password : ******** 
+Re-enter the New password : ********
 ```
-Production: SNMPv3
+Production: SSH via Radius
 ```
-ip access-list standard ACL-ANSIBLE-HOST
- permit host 172.29.50.50
-
-snmp-server view V3ISO iso included
-snmp-server group ANSIBLEGRP v3 priv write V3ISO
-snmp-server user ansible ANSIBLEGRP v3 auth sha AuthPassword123 priv aes 128 PrivPassword123 access ACL-ANSIBLE-HOST
+boot config flags sshd
+ssh
 ```
 
 
@@ -50,21 +46,21 @@ snmp-server user ansible ANSIBLEGRP v3 auth sha AuthPassword123 priv aes 128 Pri
 Running the playbook the first time:
 
 ```
-$ ansible-playbook -i hosts example-playbooks/how-to/examples-vlan.yml
+$ ansible-playbook -i hosts example-playbooks/how-to/examples-save-config.yml
 
 PLAY [all] ********************************************************************
 
 TASK: [Ensure VLAN 10 is present and has the name INTERNAL] *******************
-ok: [172.29.50.5]
+changed: [10.177.213.76]
 
 TASK: [Ensure VLAN 12 is present and has the name GUESTS] *********************
-changed: [172.29.50.5]
+changed: [10.177.213.77]
 
 TASK: [Ensure that VLAN 40 is created] ****************************************
-ok: [172.29.50.5]
+changed: [10.177.213.78]
 
 TASK: [Remove VLAN 80 if it is present] ***************************************
-ok: [172.29.50.5]
+changed: [10.177.213.79]
 
 TASK: [Create vlan 100 with SNMPv3] *******************************************
 ok: [172.29.50.5]
