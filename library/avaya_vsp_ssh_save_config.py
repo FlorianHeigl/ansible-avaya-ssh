@@ -57,6 +57,7 @@ EXAMPLES = '''
 
 from ansible.module_utils.basic import *
 try:
+    from netmiko import ConnectHandler
     from netmiko.avaya import AvayaVspSSH
     has_netmiko = True
 except:
@@ -67,9 +68,9 @@ def save_config(handler,module):
     save_reply = 'Save config to file /intflash/config.cfg successful.'
     try:
         handler.enable()
-        output = handler.send_command(save_command)
+        output = handler.send_command_expect(save_command)
         if not save_reply in output:
-            module.fail_json(msg="Unexpected save output. Likely unable to save.")
+            module.fail_json(msg="Got this save output: %s. Likely unable to save." % output)
     except Exception, err:
         module.fail_json(msg=str(err))
 
@@ -82,8 +83,7 @@ def main():
             host=dict(required=True),
             port=dict(required=False,default=22),
             username=dict(required=True),
-            password=dict(required=True),)
-        supports_check_mode=False)
+            password=dict(required=True),))
 
     ansible_arguments = module.params
 
@@ -93,11 +93,11 @@ def main():
 
     # Port the Ansible arguemnts into a Netmiko variable
     vsp_device = {
-        'device_type':'avaya_vsp'
-        'ip':ansible_arguments[host]
-        'port':ansible_arguments[port]
-        'username':ansible_arguments[username]
-        'password':ansible_arguments[password]
+        'device_type':'avaya_vsp',
+        'ip':ansible_arguments['host'],
+        'port':ansible_arguments['port'],
+        'username':ansible_arguments['username'],
+        'password':ansible_arguments['password'],
     }
 
     # Setup the Netmiko SSH Handler with the parameters pulled from Ansible. 
