@@ -110,8 +110,11 @@ EXAMPLES = '''
     username=admin
     password=avaya123
 '''
+# Manually set this to enable debug mode. In this case the script will run without the requirement of Ansible.
+debug_mode=True
 
-from ansible.module_utils.basic import *
+if not debug_mode:
+    from ansible.module_utils.basic import *
 try:
     from netmiko import ConnectHandler
     from netmiko.avaya import AvayaVspSSH
@@ -119,10 +122,9 @@ try:
 except:
     has_netmiko = False
 
-def save_config(handler,module):
+def save_config(handler,module=0):
 
     # Manually set this to enable debug mode. Debug mode will run the script standalone without the need for interaction with Ansible
-    debug_mode = True
 
     save_command = 'copy run start'
     save_reply = 'Save config to file /intflash/config.cfg successful.'
@@ -134,6 +136,8 @@ def save_config(handler,module):
                 module.fail_json(msg="Got this save output: %s. Likely unable to save." % output)
             else:
                 print "Got this save output: %s. Likely unable to save." % output
+        elif debug_mode:
+            print 'Save Config Successful: %s' % output
     except Exception, err:
         if not debug_mode:
             module.fail_json(msg=str(err))
@@ -144,22 +148,15 @@ def save_config(handler,module):
 
 def main():
 
-    # Manually set this to enable debug mode. Debug mode will run the script standalone without the need for interaction with Ansible
-    debug_mode = True
-
+    # Set our needed parameters for integration into Ansible
     if not debug_mode:
-        # Set our needed parameters for integration into Ansible
         module = AnsibleModule(
             argument_spec=dict(
                 host=dict(required=True),
                 port=dict(required=False,default=22),
                 username=dict(required=True),
                 password=dict(required=True),))
-
         ansible_arguments = module.params
-    else:
-        # Need to make sure that we have a blank AnsibleModule to interact with other functions
-        module = AnsibleModule()
 
     # Check to make sure that netmiko is there. If not then bail out.
     if not has_netmiko:
@@ -197,7 +194,10 @@ def main():
             print str(err)
 
     # Meat and Potatos. In this case, save the config.
-    return_status = save_config(ssh_handler,module)
+    if not debug_mode:
+        return_status = save_config(ssh_handler,module)
+    else:
+        return_status = save_config(ssh_handler)
 
     # Send Ansible a hopefully good report of successful save.
     if not debug_mode:
