@@ -51,18 +51,13 @@ options:
             - The version of the new image to be uploaded, activated, or rebooted to. If you are utilizing the upload functionality of this module, the version name can be detected automatically. Otherwise be cautious when using this variable as it doesn't always align well with the filename of the new image. An example is '3.1.0.2.GA'.
         required: false
         reliance: If not using the upload functionality this will be required as it will not automatically be detected and is needed in order to activate and safely reboot.    
-    scp_server_host:
-        description: The IP address or hostname of the SCP server that will contain the new image to upload.
+    ftp_server_ip:
+        description: The IP address of the FTP server that will contain the new image to upload.
         required: false
         reliance: This will be required if uploading a new image.
-    scp_server_port:
-        description: 
-            - The port on which the SCP server is running.
-        required: false
-        reliance: This will be required if uploading a new image and the server is running on a non-standard port (not port 22).
-    scp_server_directory:
+    ftp_server_directory:
         description:
-            - The directory on the SCP server where the new image resides.
+            - The directory on the FTP server where the new image resides.
         required: false
         relaince: This will be required if uploading a new image and image resides in something other than the default directory of the SCP server.
     del_image_version:
@@ -116,36 +111,49 @@ try:
 except:
     has_netmiko = False
 from time import sleep
+import re
 
 def save_config(handler,module=0):
+    # Function takes the Netmiko SSH handler (handler) and the Ansible handler (handler). It atetmpts to save the config.
+    # If it is successful then it returns true.
 
+    # Set some constants that hopefully will not change with different versions of code.
     save_command = 'copy run start'
     save_reply = 'Save config to file /intflash/config.cfg successful.'
+
+    # Prepare a couple of variable that might be useful later.
+    save_config_has_changed = False
+
+    # Send the copy run start command and start to check the output.
     try:
         handler.enable()
         output = handler.send_command_expect(save_command)
+
+        # Check to make sure we got an expected output. If not we need to thow some errors.
         if not save_reply in output:
             if not debug_mode:
-                module.fail_json(msg="Got this save output: %s. Likely unable to save." % output)
+                module.fail_json(msg='We got some unexpected output. Likely unable to save')
             else:
-                print "**** Likely unable to save!"
-                print output
-        elif debug_mode:
-            print '**** Save Config Successful'
-            print output
+                print ('**** We got some unexpected output. Likely unable to save!')
+        else:
+            save_config_has_changed = True
+            if debug_mode:
+                print '**** Save Config Successful.'
+    
     except Exception, err:
         if not debug_mode:
             module.fail_json(msg=str(err))
         else:
             print str(err)
 
-    return {'changed':True}
+    return save_config_has_changed
 
 def get_software_versions(handler, module=0):
     # Get the output of 'show sofware', formats it into a clean list, seperates out the primary and backup 
     # releases into a dictionary, and returns a list of all the releases as well as a dictionary containing 
     # the primary and backup release (if there is a backup release)
 
+    # Set some constants that hopefully will not change with different versions of code.
     show_software_command = 'show software'
     show_software_header = '================================================================================'
     show_software_footer = '--------------------------------------------------------------------------------'
@@ -153,6 +161,7 @@ def get_software_versions(handler, module=0):
     primary_release = '(Primary Release)'
     next_boot_release = '(Next Boot Release)'
 
+    # Send the show software command and start to check the output.
     try:
         handler.enable()
         output = handler.send_command_expect(show_software_command)
@@ -290,6 +299,7 @@ def reboot_switch(handler, device, wait_for_reboot, module=0):
     # Function takes the Netmiko SSH handler (handler), a bool that determines if we are going to wait for successful reboot,
     # and the Ansible module (module).
 
+    # Set some constants that hopefully will not change with different versions of code.
     reboot_command = 'reset -y'
     login_retrys = 10
     login_wait_sec = 30
@@ -308,6 +318,7 @@ def reboot_switch(handler, device, wait_for_reboot, module=0):
             else:
                 print ('**** ' + str(err))
             return None
+
     # Reboot the switch and patiently wait for the reboot to occur
     else:
         if debug_mode:
@@ -335,7 +346,174 @@ def reboot_switch(handler, device, wait_for_reboot, module=0):
                     print ('**** ' + str(err))
         return None
 
+def add_software_version(handler, add_filename, module=0):
+    
+    # Set some constants that hopefully will not change with different versions of code.
+    software_add_command = 'software add '
+    software_already_exists_re = r'Version (.*?) already exists in /intflash/release/\. Do you want to re-add it\?'
+    software_add_successful_re = r'Extraction of (.*?) to (.*?) successful'
+    software_invalid = 'Invalid release archive'
+    software_not_found = 'not found.'
+    software_yes_no_prompt = '(y/n) ?'
+    dir_command = 'dir'
+    software_no = 'n'
 
+    # Prepare a couple of variable that might be useful later.
+    add_software_has_changed = False
+    add_command = software_add_command + add_filename
+    software_version_name = None
+
+    if debug_mode:
+        print ('**** Filename to be added: ' + str(add_filename))
+
+
+    # Check if the filename that is passed is currently in the /intflash/
+    # If it isn't then we need to fail out.
+    try:
+        handler.enable()
+        output = handler.send_command_expect(dir_command)
+    except Exception, err:
+        if not debug_mode:
+            module.fail_json(msg=str(err))
+        else:
+            print ('**** ' + str(err))
+
+    # Take the output from the dir command and search for the filename passwed to the function.
+    if not add_filename in output:
+        if not debug_mode:
+            module.fail_json('New software filename not found in switch flash')
+        else:
+            print ('**** New software filename not found in switch flash')
+        return add_software_has_changed, software_version_name
+    elif debug_mode:
+        print ('**** Filename found in internal flash')
+
+    # Software filename is in flash. Now we try to load it.
+    try:
+        handler.enable()
+        # This is going to have to be a workaround because of Netmiko limitations. Since send_command_expect can't 
+        # handle multiple expect statements we are going to just have to wait for a timeout. This will get updated
+        # once Netmiko has better expect support.
+        if debug_mode:
+            print ('**** Kicking off add software. This will take 3 minutes.')
+
+        # Run the command that trys to add the software
+        output = handler.send_command(add_command, max_loops=10, delay_factor=20)
+
+    except Exception, err:
+        if not debug_mode:
+            module.fail_json(msg=str(err))
+        else:
+            print ('**** ' + str(err))
+        return add_software_has_changed, software_version_name
+
+    # Do a regular expresion to look for a string pattern that would tell us there was a successful software add
+    match_add_success = re.search(software_add_successful_re, output, re.M | re.I)
+    match_already_exists = re.search(software_already_exists_re, output, re.M | re.I)
+
+    # We found text that matched a case where the software being added was already there. Let's setup the proper returns, send a 'n' to tell it not to write over the existing, and complete.
+    if match_already_exists:
+        try:
+            if debug_mode:
+                print ('**** Sending n to tell switch not to write over existing software.')
+            handler.send_command_expect(software_no)
+        except Exception, err:
+            if not debug_mode:
+                module.fail_json(msg=str(err))
+            else:
+                print ('**** ' + str(err))
+        # Extract the version number out with our already exists regular expression
+        software_version_name = match_already_exists.group(1)
+        if debug_mode:
+            print ('**** Software version already added to bootable flash.')
+            print ('**** The software version name detected was ' + str(software_version_name))   
+    # We found text that matched a successful add. Let's setup the proper returns and complete.
+    elif match_add_success:
+        #Extract the version number out with our add success regular expression
+        software_version_name = match_add_success.group(1)
+        if debug_mode:
+                print ('**** The software version name detected was ' + str(software_version_name))
+        add_software_has_changed = True
+    # Seems like the add wasn't successful. One possible reason is that the file trying to be added is not a matching version. Tell the user that and exit.
+    elif software_invalid in output:
+        if not debug_mode:
+            module.fail_json('The software being added either was not correct for this platform or was corrupted. The installer was left on the internal flash of the swtich.')
+        else:
+            print ('**** The software being added either was not correct for this platform or was corrupted. The installer was left on the internal flash of the swtich.')
+    # Fell into a place where we are not catching the error. 
+    else:
+        if not debug_mode:
+            module.fail_json('Script got to an unexpected place. It tried to add the software but didn\'t find expected output.')
+        else:
+            print ('**** Script got to an unexpected place. It tried to add the software but didn\'t find expected output.')
+
+    # Return the True if this function has changed something. Next, return the software version string that we extract out of the filename add.
+    return add_software_has_changed, software_version_name
+
+def remove_version_software(handler, remove_version, versions, pri_back, module=0):
+
+    software_remove_command = 'software remove '
+    show_software_command = 'show software'
+    software_remove_primary = 'You can not remove Primary version.'
+    software_remove_backup = 'You can not remove the Backup version.'
+    software_remove_successful = 'removed successfully.'
+
+    remove_command = software_remove_command + remove_version
+    remove_version_has_changed = False
+
+    if remove_version is pri_back['primary']:
+        if not debug_mode:
+            module.fail_json('The sofware version being removed is the primary version. This is not permitted. The version is still in flash.')
+        else:
+            print ('**** The sofware version being removed is the primary version. This is not permitted. The version is still in flash.')
+
+    elif remove_version is pri_back['backup']:
+        if not debug_mode:
+            module.fail_json('The sofware version being removed is the backup version. This is not permitted. The version is still in flash.')
+        else:
+            print ('**** The sofware version being removed is the backup version. This is not permitted. The version is still in flash.')
+
+    elif remove_version is pri_back['next boot']:
+        if not debug_mode:
+            module.fail_json('The sofware version being removed is the next boot version. This is not permitted. The version is still in flash.')
+        else:
+            print ('**** The sofware version being removed is the next boot version. This is not permitted. The version is still in flash.')
+
+    elif remove_version in versions:
+        if debug_mode:
+            print ('**** We found the software in the versions list.')
+        try:
+            handler.enable()
+            output = handler.send_command_expect(remove_command)
+            if debug_mode:
+                print (output)
+
+        except Exception, err:
+            if not debug_mode:
+                module.fail_json(msg=str(err))
+            else:
+                print ('**** ' + str(err))
+
+        if software_remove_successful in output:
+            if debug_mode:
+                print('**** The sofware version was found to be in flash and we are removed it.')
+            remove_version_has_changed = True
+        else:
+            if not debug_mode:
+                module.fail_json('We hit an unexpected condition. We attempted to remove the software but did not get the response we predicted.')
+            else:
+                print ('**** We hit an unexpected condition. We attempted to remove the software but did not get the response we predicted.')
+
+    else:
+        if not debug_mode:
+            module.fail_json('The sofware version being removed isn\'t currently in flash. It cannot be removed.')
+        else:
+            print ('**** The sofware version being removed isn\'t currently in flash. It cannot be removed.')
+
+    return remove_version_has_changed
+
+#def remove_old_software(handler, versions, pri_back, module=0):
+#def upload_software_version(handler, switch_device, new_filename, module=0):
 
 def main():
 
@@ -365,6 +543,7 @@ def main():
             'username':ansible_arguments['username'],
             'password':ansible_arguments['password'],
         }
+    # If we are in debug mode input the needed varibales manually.
     else:
         vsp_device = {
             'device_type':'avaya_vsp',
@@ -373,6 +552,10 @@ def main():
             'username':'admin',
             'password':'avaya123',
         }
+        act_version = '3.1.0.2.GA'
+        filename = 'VOSS4K.4.2.1.0.tgz'
+        missing_filename = 'blerg.tgz'
+        invalid_filename = 'VSP4K.4.0.0.3.tgz'
 
     # Setup the Netmiko SSH Handler with the parameters pulled from Ansible. 
     # Catch any exceptions that might come from Netmiko and throw it to Ansible.
@@ -390,18 +573,26 @@ def main():
     if not debug_mode:
         return_status = save_config(ssh_handler,module)
     else:
-        # Manual set varibale for debug_mode
-        act_version = '3.1.0.2.GA'
 
         # Down here should be what the real script would look like.
         act_has_changed = False
 
-        # return_status = save_config(ssh_handler)
+        #return_status = save_config(ssh_handler)
         release_list,pri_back = get_software_versions(ssh_handler)
-        pri_back,act_has_changed = activate_software_version(ssh_handler, act_version, release_list, pri_back)
+        #pri_back,act_has_changed = activate_software_version(ssh_handler, act_version, release_list, pri_back)
 
-        ssh_handler = reboot_switch(ssh_handler, vsp_device, False)
-        save_config (ssh_handler)
+        #ssh_handler = reboot_switch(ssh_handler, vsp_device, False)
+        #save_config (ssh_handler)
+
+        #add_has_changed, version = add_software_version(ssh_handler, filename)
+
+        #print ('Has software change?: ' + str(add_has_changed))
+        #print ('Parsed Version?: ' + str(version))
+
+        version = 'VOSS4K.4.2.1.0.GA'
+        remove_has_changed = remove_version_software(ssh_handler, version, release_list, pri_back)
+
+        print ('Has software removed?: ' + str(remove_has_changed))
 
     # Send Ansible a hopefully good report of successful save.
     if not debug_mode:
